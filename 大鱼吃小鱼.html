@@ -24,6 +24,7 @@
     text-shadow: 0 2px 6px rgba(0,20,40,.6);
     line-height: 1.4;
   }
+  #lives { font-size: 22px; letter-spacing: 3px; margin-bottom: 2px; }
   #score { font-size: 30px; font-weight: 700; letter-spacing: 1px; }
   #score span { color: #ffd54a; }
   #level { font-size: 14px; opacity: .85; margin-left: 2px; }
@@ -65,6 +66,10 @@
   }
   .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(255,180,40,.6); }
   .btn:active { transform: translateY(1px); }
+  .btn-row { margin-top: 30px; display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  .btn-row .btn { margin-top: 0; }
+  .btn-danger { color: #fff; background: linear-gradient(180deg, #ff8176, #e8483a); box-shadow: 0 6px 20px rgba(255,90,70,.45); }
+  .btn-danger:hover { box-shadow: 0 10px 26px rgba(255,90,70,.6); }
 
   #gameover .title { font-size: 44px; color: #ff7a6e; }
   #final { font-size: 26px; margin-top: 14px; color: #ffd54a; font-weight: 700; }
@@ -79,6 +84,7 @@
   <canvas id="game"></canvas>
 
   <div id="hud">
+    <div id="lives">❤️❤️❤️</div>
     <div id="score">得分 <span id="scoreVal">0</span></div>
     <div id="level">🐟 体型 <span id="levelVal">1 级</span></div>
     <div id="combo"></div>
@@ -90,16 +96,19 @@
     <div class="hint">
       🖱️ <b>移动鼠标</b>（或手指滑动）控制你的小鱼<br>
       🐟 吃掉<b>比自己小</b>的鱼来长大<br>
-      ⚠️ 躲开<b>比自己大</b>的鱼，碰到就结束<br>
+      ⚠️ 躲开<b>比自己大</b>的鱼，被碰到会掉一条命<br>
       🍙 吃掉 <b>米粒 / 饭团 / 寿司</b> 也能快速长大<br>
       🔥 连续进食触发<b>连击加分</b>
     </div>
-    <button class="btn" id="startBtn">开 始</button>
+    <button class="btn" id="startBtn">普通模式 · 三条命</button>
+      <button class="btn btn-danger" id="challengeBtn">挑战模式 · 一条命</button>
+    </div>
   </div>
 
   <div id="gameover" class="overlay hidden">
     <div class="title">游戏结束</div>
     <div id="final">得分 0</div>
+    <div id="modeTag"></div>
     <div id="best"></div>
     <div id="fnew"></div>
     <button class="btn" id="restartBtn">再来一局</button>
@@ -121,7 +130,8 @@
   const $ = id => document.getElementById(id);
   const scoreVal = $("scoreVal"), levelVal = $("levelVal"), sizeFill = $("sizeFill"),
         comboEl = $("combo"), startOv = $("start"), overOv = $("gameover"),
-        finalEl = $("final"), bestEl = $("best"), fnewEl = $("fnew"), pausedOv = $("paused");
+        finalEl = $("final"), bestEl = $("best"), fnewEl = $("fnew"), pausedOv = $("paused"),
+        livesEl = $("lives"), modeTag = $("modeTag");
 
   let W = 0, H = 0, DPR = 1;
   function resize() {
@@ -143,6 +153,7 @@
   // ---------- 游戏状态 ----------
   let player, fishes, bubbles, plants, particles, items;
   let score = 0, combo = 0, comboTimer = 0, status = "idle"; // idle | playing | over | paused
+  let mode = "normal", lives = 3, invincible = 0; // normal = 三命, challenge = 一命
   let best = 0;
   try { best = parseInt(localStorage.getItem("bigFishBest") || "0", 10) || 0; } catch (e) {}
 
@@ -305,9 +316,14 @@
         grow(gain);
         burst(f.x, f.y, f.hue, gain + bonus);
       } else if (f.r >= pr * 1.16) {
-        // 被吃
-        gameOver();
-        return;
+        // 被吃：扣一条命（无敌期间不扣）
+        if (invincible <= 0) {
+          lives--;
+          burst(player.x, player.y, 0, 18);
+          if (lives <= 0) { gameOver(); return; }
+          invincible = 2.5;
+        }
+        break;
       }
     }
     fishes = fishes.filter(f => !f.dead);
@@ -525,6 +541,9 @@
   function drawFish(f, isPlayer) {
     const { x, y, r, angle, hue } = f;
     ctx.save();
+    if (isPlayer && invincible > 0) {
+      ctx.globalAlpha = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(performance.now() / 60));
+    }
     ctx.translate(x, y);
     ctx.rotate(angle);
 
@@ -617,6 +636,11 @@
   }
 
   function drawHUD() {
+    // 命数
+    const maxLives = mode === "normal" ? 3 : 1;
+    let hearts = "";
+    for (let i = 0; i < maxLives; i++) hearts += (i < lives ? "❤️" : "🖤");
+    livesEl.textContent = hearts;
     // 连击
     if (combo >= 2 && comboTimer > 0) {
       comboEl.style.opacity = 1;
@@ -646,6 +670,7 @@
     for (const it of items) drawItem(it);
 
     if (status === "playing") {
+      if (invincible > 0) invincible -= dt;
       updatePlayer(dt);
       for (const f of fishes) updateFish(f, dt);
       checkEating();
@@ -676,7 +701,10 @@
   }
 
   // ---------- 流程控制 ----------
-  function startGame() {
+  function startGame(m) {
+    mode = m || mode || "normal";
+    lives = mode === "normal" ? 3 : 1;
+    invincible = 0;
     startOv.classList.add("hidden");
     overOv.classList.add("hidden");
     pausedOv.classList.add("hidden");
@@ -695,6 +723,7 @@
       fnewEl.textContent = "";
     }
     finalEl.textContent = "得分 " + score;
+    modeTag.textContent = mode === "challenge" ? "挑战模式 · 一条命" : "普通模式 · 三条命";
     bestEl.textContent = "最高记录 " + best;
     overOv.classList.remove("hidden");
     // 大爆发
@@ -725,13 +754,14 @@
   }, { passive: false });
   window.addEventListener("keydown", e => {
     if (e.key === " " || e.key === "Enter") {
-      if (status === "idle") startGame();
-      else if (status === "over") startGame();
+      if (status === "idle") startGame("normal");
+      else if (status === "over") startGame(mode);
     }
     if (e.key === "Escape" || e.key.toLowerCase() === "p") togglePause();
   });
-  $("startBtn").addEventListener("click", startGame);
-  $("restartBtn").addEventListener("click", startGame);
+  $("startBtn").addEventListener("click", () => startGame("normal"));
+  $("challengeBtn").addEventListener("click", () => startGame("challenge"));
+  $("restartBtn").addEventListener("click", () => startGame(mode));
 
   // 初始画面渲染（背景与鱼群展示）
   reset();

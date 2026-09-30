@@ -91,6 +91,7 @@
       🖱️ <b>移动鼠标</b>（或手指滑动）控制你的小鱼<br>
       🐟 吃掉<b>比自己小</b>的鱼来长大<br>
       ⚠️ 躲开<b>比自己大</b>的鱼，碰到就结束<br>
+      🍙 吃掉 <b>米粒 / 饭团 / 寿司</b> 也能快速长大<br>
       🔥 连续进食触发<b>连击加分</b>
     </div>
     <button class="btn" id="startBtn">开 始</button>
@@ -140,7 +141,7 @@
   const dist2 = (x1, y1, x2, y2) => { const dx = x1 - x2, dy = y1 - y2; return dx * dx + dy * dy; };
 
   // ---------- 游戏状态 ----------
-  let player, fishes, bubbles, plants, particles;
+  let player, fishes, bubbles, plants, particles, items;
   let score = 0, combo = 0, comboTimer = 0, status = "idle"; // idle | playing | over | paused
   let best = 0;
   try { best = parseInt(localStorage.getItem("bigFishBest") || "0", 10) || 0; } catch (e) {}
@@ -150,12 +151,15 @@
 
   function reset() {
     player = {
-      x: W / 2, y: H / 2, r: 30, angle: 0,
+      x: W / 2, y: H / 2, r: 34, angle: 0,
       vx: 0, vy: 0,
+      hue: 215,
     };
     fishes = [];
     bubbles = [];
     particles = [];
+    items = [];
+    for (let i = 0; i < 3; i++) spawnItem();
     score = 0; combo = 0; comboTimer = 0;
     // 初始生成
     for (let i = 0; i < 26; i++) spawnFish(true);
@@ -335,6 +339,108 @@
     particles = particles.filter(p => p.age < p.life);
   }
 
+  // ---------- 道具（米粒/饭团/寿司，从上往下掉，吃掉变大体型）----------
+  const ITEM_TYPES = [
+    { type: "rice",    label: "米粒", r: 9,  grow: 1.5, weight: 55 },
+    { type: "onigiri", label: "饭团", r: 15, grow: 4,   weight: 35 },
+    { type: "sushi",   label: "寿司", r: 19, grow: 8,   weight: 10 },
+  ];
+
+  function pickItemType() {
+    const total = ITEM_TYPES.reduce((s, t) => s + t.weight, 0);
+    let roll = Math.random() * total;
+    for (const t of ITEM_TYPES) { roll -= t.weight; if (roll <= 0) return t; }
+    return ITEM_TYPES[0];
+  }
+
+  function spawnItem() {
+    const t = pickItemType();
+    items.push({
+      x: rand(30, W - 30), y: -40,
+      type: t, r: t.r,
+      vy: rand(18, 36), sway: rand(0, Math.PI * 2), swaySpeed: rand(1, 2.4),
+      eaten: false
+    });
+  }
+
+  function updateItems(dt) {
+    for (const it of items) {
+      it.y += it.vy * dt;
+      it.sway += it.swaySpeed * dt;
+      it.x += Math.sin(it.sway) * 0.7;
+    }
+    items = items.filter(it => it.y < H + 50);
+    // 控制场上道具数量，从顶部慢慢补充
+    if (items.length < 6 && Math.random() < 0.025) spawnItem();
+  }
+
+  function growBy(delta) {
+    player.r = clamp(player.r + delta, 20, 140);
+  }
+
+  function checkItemCollision() {
+    const pr = player.r * 1.2;
+    for (const it of items) {
+      const rs = pr + it.r;
+      if (dist2(player.x, player.y, it.x, it.y) > rs * rs) continue;
+      it.eaten = true;
+      growBy(it.type.grow);
+      score += 5;
+      const hue = it.type.type === "rice" ? 50 : (it.type.type === "onigiri" ? 30 : 25);
+      burst(it.x, it.y, hue, 8);
+    }
+    items = items.filter(it => !it.eaten);
+  }
+
+  function drawItem(it) {
+    const { type, r } = it;
+    ctx.save();
+    ctx.translate(it.x, it.y);
+
+    if (type.type === "rice") {
+      // 米粒
+      ctx.save();
+      ctx.rotate(0.7 + Math.sin(it.sway) * 0.25);
+      ctx.fillStyle = "#fffdf2";
+      ctx.strokeStyle = "rgba(190,150,80,0.4)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r, r * 0.42, 0, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+    } else if (type.type === "onigiri") {
+      // 三角饭团 + 海苔
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 1.15);
+      ctx.quadraticCurveTo(r * 0.92, -r * 0.2, r * 0.9, r * 0.5);
+      ctx.quadraticCurveTo(r * 0.86, r * 0.78, 0, r * 0.78);
+      ctx.quadraticCurveTo(-r * 0.86, r * 0.78, -r * 0.9, r * 0.5);
+      ctx.quadraticCurveTo(-r * 0.92, -r * 0.2, 0, -r * 1.15);
+      ctx.fill();
+      ctx.fillStyle = "#2c3e33";
+      ctx.beginPath();
+      ctx.ellipse(0, r * 0.4, r * 0.72, r * 0.34, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // 寿司：白米饭 + 橙色鱼片 + 海苔带
+      ctx.fillStyle = "#fffdf4";
+      ctx.beginPath(); ctx.ellipse(0, 0, r, r * 0.72, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#ff9a5c";
+      ctx.beginPath(); ctx.ellipse(0, -r * 0.1, r * 0.98, r * 0.52, 0, Math.PI, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#2c3e33";
+      ctx.fillRect(-r * 0.52, -r * 0.12, r * 1.04, r * 0.22);
+    }
+
+    // 呼吸光圈提示
+    ctx.strokeStyle = "rgba(255,255,255,0.4)";
+    ctx.lineWidth = 1.5;
+    const pulse = r + 5 + Math.sin(performance.now() / 250) * 1.6;
+    ctx.beginPath(); ctx.arc(0, 0, pulse, 0, Math.PI * 2); ctx.stroke();
+
+    ctx.restore();
+  }
+
   // ---------- 气泡 ----------
   function makeBubble(initial) {
     return {
@@ -422,9 +528,9 @@
     ctx.translate(x, y);
     ctx.rotate(angle);
 
-    const bodyLen = r * 2.4;
-    const sat = isPlayer ? 85 : 70;
-    const light = isPlayer ? 62 : 55;
+    const bodyLen = r * (isPlayer ? 2.1 : 2.4);
+    const sat = isPlayer ? 88 : 70;
+    const light = isPlayer ? 60 : 55;
 
     // 尾巴（摆动）
     const wag = Math.sin(performance.now() / 130 + x) * 0.4;
@@ -436,14 +542,23 @@
     ctx.quadraticCurveTo(-bodyLen * 0.72, r * 0.75 - wag * r, -bodyLen * 0.38, 0);
     ctx.fill();
 
-    // 身体
+    // 身体（玩家鱼更短更圆胖 = 大肥鱼）
+    const bodyRy = isPlayer ? r * 1.35 : r;
     const bg = ctx.createRadialGradient(r * 0.2, -r * 0.3, r * 0.1, 0, 0, r * 1.1);
     bg.addColorStop(0, `hsl(${hue}, ${sat}%, ${light + 20}%)`);
     bg.addColorStop(1, `hsl(${hue}, ${sat}%, ${light}%)`);
     ctx.fillStyle = bg;
     ctx.beginPath();
-    ctx.ellipse(0, 0, bodyLen * 0.5, r, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, bodyLen * 0.5, bodyRy, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    // 玩家鱼：鼓鼓的大肚子高光
+    if (isPlayer) {
+      ctx.fillStyle = `hsla(${hue}, 92%, 78%, 0.35)`;
+      ctx.beginPath();
+      ctx.ellipse(-bodyLen * 0.08, bodyRy * 0.42, bodyLen * 0.28, bodyRy * 0.36, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // 背鳍
     ctx.fillStyle = `hsl(${hue}, ${sat}%, ${light - 5}%)`;
@@ -478,7 +593,7 @@
     if (isPlayer) {
       ctx.strokeStyle = "rgba(255,255,255,0.28)";
       ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(0, 0, r * 1.18, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, r * 1.45, 0, Math.PI * 2); ctx.stroke();
     }
     ctx.restore();
   }
@@ -528,12 +643,15 @@
     drawBackground();
     drawPlants();
     drawBubbles();
+    for (const it of items) drawItem(it);
 
     if (status === "playing") {
       updatePlayer(dt);
       for (const f of fishes) updateFish(f, dt);
       checkEating();
       updateParticles(dt);
+      updateItems(dt);
+      checkItemCollision();
       // 补充鱼
       const target = 26;
       if (fishes.length < target && Math.random() < 0.08) spawnFish(false);

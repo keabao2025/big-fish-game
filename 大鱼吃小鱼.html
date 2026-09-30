@@ -159,10 +159,12 @@
 
   // 体型等级阈值：每升一级体型 +8
   const growthPerLevel = 8;
+  const START_R = 34;   // 初始体型（即 1 级基准）
+  const MAX_R = 140;    // 体型上限
 
   function reset() {
     player = {
-      x: W / 2, y: H / 2, r: 34, angle: 0,
+      x: W / 2, y: H / 2, r: START_R, angle: 0,
       vx: 0, vy: 0,
       hue: 215,
     };
@@ -194,19 +196,19 @@
     const pr = player.r;
 
     if (initial) {
-      // 开局大量小鱼、少量大鱼
+      // 开局大量小鱼、少量温和的大鱼
       bigRatio = rand(0.25, 0.6);
-      if (Math.random() < 0.22) {
-        r = pr + rand(8, 28);     // 大鱼
+      if (Math.random() < 0.18) {
+        r = rand(pr * 1.15, pr * 1.35);     // 开局大鱼：尺寸温和
       } else {
-        r = rand(pr * 0.4, pr * 0.88); // 小鱼
+        r = rand(pr * 0.4, pr * 0.85);      // 小鱼
       }
     } else {
       bigRatio = rand(0.3, 1.15);
       // 按当前玩家体型动态生成，保证可吃与危险并存
-      if (Math.random() < 0.42) {
-        r = rand(pr + 8, pr + 34);      // 略大于玩家的危险鱼
-      } else if (Math.random() < 0.5) {
+      if (Math.random() < 0.36) {
+        r = rand(pr * 1.2, pr * 1.6);   // 始终比玩家大 1.2~1.6 倍，满级也有致命威胁
+      } else if (Math.random() < 0.55) {
         r = rand(pr * 0.35, pr * 0.8);  // 明显小鱼
       } else {
         r = rand(pr * 0.8, pr + 6);     // 接近玩家，紧张刺激
@@ -249,12 +251,13 @@
     // 遇玩家：小鱼逃跑、大鱼轻微追击
     if (status === "playing") {
       const d = Math.hypot(player.x - f.x, player.y - f.y);
-      if (d < 260) {
+      if (d < 230) {
         const away = Math.atan2(f.y - player.y, f.x - player.x);
-        const big = f.r > player.r * 1.12; // 实时判断相对体型
-        if (big) {
+        const big = f.r > player.r * 1.2; // 实时判断相对体型
+        if (big && invincible <= 0) {
+          // 大鱼追击（无敌期间放弃追击，给玩家喘息）
           const to = Math.atan2(player.y - f.y, player.x - f.x);
-          f.targetAngle = to + rand(-0.6, 0.6);
+          f.targetAngle = to + rand(-0.7, 0.7);
         } else {
           f.targetAngle = away + rand(-0.5, 0.5);
         }
@@ -306,8 +309,8 @@
       const rsum = pr + f.r - 6;
       if (dist2(player.x, player.y, f.x, f.y) > rsum * rsum) continue;
 
-      if (pr >= f.r * 1.16) {
-        // 吃掉
+      if (pr >= f.r * 1.1) {
+        // 吃掉（明显更小）
         f.dead = true;
         const gain = Math.round(f.r * 2);
         combo++; comboTimer = 2.4;
@@ -315,24 +318,50 @@
         score += gain + bonus;
         grow(gain);
         burst(f.x, f.y, f.hue, gain + bonus);
-      } else if (f.r >= pr * 1.16) {
-        // 被吃：扣一条命（无敌期间不扣）
+      } else if (f.r >= pr * 1.25) {
+        // 致命：明显大 25% 以上才掉命
         if (invincible <= 0) {
           lives--;
           burst(player.x, player.y, 0, 18);
+          // 被吃惩罚：体型缩小 + 沿反方向弹开，脱离鱼群
+          player.r = clamp(player.r * 0.85, 20, MAX_R);
+          const kdx = player.x - f.x, kdy = player.y - f.y;
+          const kd = Math.hypot(kdx, kdy) || 1;
+          player.x += (kdx / kd) * 50;
+          player.y += (kdy / kd) * 50;
           if (lives <= 0) { gameOver(); return; }
-          invincible = 2.5;
+          invincible = 3;
         }
         break;
+      } else {
+        // 中性区：势均力敌，互相弹开（不互吃、不掉命）
+        bounce(f);
       }
     }
     fishes = fishes.filter(f => !f.dead);
   }
 
+  // 势均力敌的碰撞：把双方推开，避免叠着穿模
+  function bounce(f) {
+    const dx = player.x - f.x, dy = player.y - f.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const overlap = (player.r + f.r) - d;
+    if (overlap <= 0) return;
+    const ux = dx / d, uy = dy / d;
+    player.x += ux * overlap * 0.55;
+    player.y += uy * overlap * 0.55;
+    f.x -= ux * overlap * 0.45;
+    f.y -= uy * overlap * 0.45;
+    player.vx += ux * 160;
+    player.vy += uy * 160;
+    f.vx -= ux * 120;
+    f.vy -= uy * 120;
+  }
+
   function grow(mass) {
     const r = player.r;
     player.r = Math.sqrt(r * r + mass * 2.2); // 面积增长，慢慢长大
-    player.r = clamp(player.r, 20, 140);
+    player.r = clamp(player.r, 20, MAX_R);
   }
 
   // ---------- 粒子 ----------
@@ -391,7 +420,7 @@
   }
 
   function growBy(delta) {
-    player.r = clamp(player.r + delta, 20, 140);
+    player.r = clamp(player.r + delta, 20, MAX_R);
   }
 
   function checkItemCollision() {
@@ -652,9 +681,9 @@
 
   function updateHUD() {
     scoreVal.textContent = score;
-    const level = Math.floor((player.r - 20) / growthPerLevel) + 1;
+    const level = Math.max(1, Math.floor((player.r - START_R) / growthPerLevel) + 1);
     levelVal.textContent = level + " 级";
-    const pct = clamp((player.r - 20) / (140 - 20) * 100, 3, 100);
+    const pct = clamp((player.r - START_R) / (MAX_R - START_R) * 100, 0, 100);
     sizeFill.style.width = pct + "%";
   }
 
@@ -704,7 +733,7 @@
   function startGame(m) {
     mode = m || mode || "normal";
     lives = mode === "normal" ? 3 : 1;
-    invincible = 0;
+    invincible = 2; // 出生保护：开局 2 秒无敌，给玩家反应时间
     startOv.classList.add("hidden");
     overOv.classList.add("hidden");
     pausedOv.classList.add("hidden");

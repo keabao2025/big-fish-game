@@ -141,7 +141,7 @@
       🖱️ <b>移动鼠标</b>（或手指滑动）控制你的小鱼<br>
       🐟 吃掉<b>比自己小</b>的鱼来长大<br>
       ⚠️ 躲开<b>比自己大</b>的鱼，被碰到会掉一条命<br>
-      🍙 吃掉 <b>米粒 / 饭团 / 寿司</b> 也能快速长大<br>
+      🍙 吃掉 <b>米粒 / 饭团 / 大盘饭</b> 也能快速长大<br>
       🔥 连续进食触发<b>连击加分</b>
     </div>
     <button class="btn" id="startBtn">普通模式 · 三条命</button>
@@ -684,11 +684,11 @@
     particles = particles.filter(p => p.age < p.life);
   }
 
-  // ---------- 道具（米粒/饭团/寿司，从上往下掉，吃掉变大体型）----------
+  // ---------- 道具（米粒/饭团/大盘饭，从上往下掉，吃掉变大体型）----------
   const ITEM_TYPES = [
     { type: "rice",    label: "米粒", r: 9,  grow: 1.5, weight: 55 },
     { type: "onigiri", label: "饭团", r: 15, grow: 4,   weight: 35 },
-    { type: "sushi",   label: "寿司", r: 19, grow: 8,   weight: 10 },
+    { type: "sushi",   label: "大盘饭", r: 24, grow: 10,  weight: 12 },
   ];
 
   function pickItemType() {
@@ -769,13 +769,22 @@
       ctx.ellipse(0, r * 0.4, r * 0.72, r * 0.34, 0, 0, Math.PI * 2);
       ctx.fill();
     } else {
-      // 寿司：白米饭 + 橙色鱼片 + 海苔带
+      // 大盘饭：大白盘 + 鼓起的白米饭 + 冒热气
+      // 盘子底与盘沿
+      ctx.fillStyle = "#e6dcc8";
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 1.15, r * 0.38, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#c9b894"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 1.15, r * 0.38, 0, 0, Math.PI * 2); ctx.stroke();
+      // 鼓起的白米饭
       ctx.fillStyle = "#fffdf4";
-      ctx.beginPath(); ctx.ellipse(0, 0, r, r * 0.72, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#ff9a5c";
-      ctx.beginPath(); ctx.ellipse(0, -r * 0.1, r * 0.98, r * 0.52, 0, Math.PI, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#2c3e33";
-      ctx.fillRect(-r * 0.52, -r * 0.12, r * 1.04, r * 0.22);
+      ctx.beginPath(); ctx.ellipse(0, -r * 0.18, r * 0.85, r * 0.36, 0, Math.PI, Math.PI * 2); ctx.fill();
+      // 米粒斑点
+      ctx.fillStyle = "rgba(235,220,180,0.75)";
+      for (let k = 0; k < 5; k++) {
+        ctx.beginPath();
+        ctx.ellipse(Math.cos(k * 1.4) * r * 0.45, -r * 0.32 - Math.abs(Math.sin(k * 1.3)) * r * 0.18, r * 0.06, r * 0.04, k, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     // 呼吸光圈提示

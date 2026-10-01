@@ -92,6 +92,7 @@
   .btn-danger:hover { box-shadow: 0 10px 26px rgba(255,90,70,.6); }
 
   #gameover .title { font-size: 44px; color: #ff7a6e; }
+  #gameover { background: radial-gradient(circle at 50% 40%, rgba(3,30,52,.45), rgba(1,12,24,.55)); }
   #final { font-size: 26px; margin-top: 14px; color: #ffd54a; font-weight: 700; }
   #best { font-size: 15px; margin-top: 8px; opacity: .8; }
   #fnew { font-size: 15px; margin-top: 4px; color: #7ee6ff; font-weight: 700; }
@@ -528,6 +529,7 @@
         grow(gain);
         combo >= 3 ? Sound.comboEat(combo) : Sound.eat();
         burst(f.x, f.y, f.hue, gain + bonus);
+      } else if (f.r >= pr * 1.25) {
         // 致命：明显大 25% 以上才掉命
         if (invincible <= 0) {
           lives--;

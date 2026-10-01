@@ -163,6 +163,14 @@
     <div class="hint">按 <b>Esc</b> 或 <b>P</b> 继续</div>
   </div>
 
+  <!-- 挑战模式 · 满级称霸 -->
+  <div id="challengeMax" class="overlay hidden">
+    <img class="end-img" src="图片/deep-sea-boss.jpg" alt="深海鱼霸">
+    <div class="end-score" id="cmScore">得分 0</div>
+    <div class="end-new" id="cmNew">🌊 深海霸主！</div>
+    <button class="btn" id="cmRestartBtn">再来一局</button>
+  </div>
+
   <!-- 挑战模式 · 破纪录 -->
   <div id="challengeRecord" class="overlay hidden">
     <img class="end-img" src="图片/big-fish-end.jpg" alt="我不是大肥鱼">
@@ -192,8 +200,8 @@
         comboEl = $("combo"), startOv = $("start"), overOv = $("gameover"),
         finalEl = $("final"), bestEl = $("best"), fnewEl = $("fnew"), pausedOv = $("paused"),
         livesEl = $("lives"), modeTag = $("modeTag"),
-        challengeRecord = $("challengeRecord"), challengeFail = $("challengeFail"),
-        crScore = $("crScore"), cfScore = $("cfScore"), cfBest = $("cfBest");
+        challengeMax = $("challengeMax"), challengeRecord = $("challengeRecord"), challengeFail = $("challengeFail"),
+        cmScore = $("cmScore"), crScore = $("crScore"), cfScore = $("cfScore"), cfBest = $("cfBest");
 
   let W = 0, H = 0, DPR = 1;
   function resize() {
@@ -968,6 +976,7 @@
 
   // ---------- 主循环 ----------
   let last = 0;
+  let maxSwitchTimer = null; // 深海鱼霸→我不是大肥鱼 延时切换定时器
   function loop(ts) {
     const dt = Math.min(0.05, (ts - last) / 1000 || 0.016);
     last = ts;
@@ -1018,6 +1027,8 @@
     pausedOv.classList.add("hidden");
     if (challengeRecord) challengeRecord.classList.add("hidden");
     if (challengeFail) challengeFail.classList.add("hidden");
+    if (challengeMax) challengeMax.classList.add("hidden");
+    if (maxSwitchTimer) { clearTimeout(maxSwitchTimer); maxSwitchTimer = null; }
     canvas.style.pointerEvents = "auto"; // 恢复画布交互
     reset();
     status = "playing";
@@ -1040,12 +1051,28 @@
     canvas.style.pointerEvents = "none";
 
     if (mode === "challenge") {
-      // 挑战模式：显示插图结局（带防御性 null 检查，避免 DOM 缺失导致死屏）
-      if (isNewRecord) {
+      // 挑战模式：按优先级显示插图结局（带防御性 null 检查，避免 DOM 缺失导致死屏）
+      const isMaxSize = player.r >= MAX_R - 5;   // 体型接近满级即视为占据全屏
+      if (isMaxSize) {
+        // 最高级：深海鱼霸（占据全屏）
+        if (cmScore) cmScore.textContent = "得分 " + score;
+        if (challengeMax) challengeMax.classList.remove("hidden");
+        else if (overOv) { overOv.classList.remove("hidden"); fnewEl.textContent = ""; }
+        // 若同时破纪录：先展示深海鱼霸，稍后切换为「我不是大肥鱼」
+        if (isNewRecord) {
+          maxSwitchTimer = setTimeout(() => {
+            if (challengeMax) challengeMax.classList.add("hidden");
+            if (crScore) crScore.textContent = "得分 " + score;
+            if (challengeRecord) challengeRecord.classList.remove("hidden");
+          }, 2500);
+        }
+      } else if (isNewRecord) {
+        // 破纪录但未满级：我不是大肥鱼
         if (crScore) crScore.textContent = "得分 " + score;
         if (challengeRecord) challengeRecord.classList.remove("hidden");
         else if (overOv) { overOv.classList.remove("hidden"); fnewEl.textContent = "🎉 新纪录！"; }
       } else {
+        // 未满级且未破纪录：没吃饱喵
         if (cfScore) cfScore.textContent = "得分 " + score;
         if (cfBest) cfBest.textContent = best;
         if (challengeFail) challengeFail.classList.remove("hidden");
@@ -1102,6 +1129,7 @@
   $("restartBtn").addEventListener("click", () => { Sound.unlock(); startGame(mode); });
   $("crRestartBtn").addEventListener("click", () => { Sound.unlock(); startGame("challenge"); });
   $("cfRestartBtn").addEventListener("click", () => { Sound.unlock(); startGame("challenge"); });
+  $("cmRestartBtn").addEventListener("click", () => { Sound.unlock(); startGame("challenge"); });
 
   // 静音开关
   const soundBtn = $("soundToggle");

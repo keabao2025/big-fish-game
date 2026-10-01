@@ -42,6 +42,26 @@
     transition: width .3s ease;
   }
 
+  /* 音量/静音开关 */
+  #soundToggle {
+    position: absolute; top: 14px; right: 16px; z-index: 20;
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.35);
+    background: rgba(0,30,55,.45);
+    color: #eaf6ff; font-size: 22px; line-height: 40px;
+    text-align: center; cursor: pointer; user-select: none;
+    -webkit-user-select: none; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+    transition: transform .12s ease, background .12s ease;
+  }
+  #soundToggle:hover { background: rgba(0,45,80,.65); transform: scale(1.08); }
+  #soundToggle:active { transform: scale(.94); }
+  #soundToggle.muted { opacity: .65; }
+  #soundToggle.muted::after {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    width: 52%; height: 2px; background: #ff6a5e; border-radius: 2px;
+    transform: translate(-50%,-50%) rotate(45deg);
+  }
+
   /* 遮罩层 */
   .overlay {
     position: absolute; inset: 0; display: flex;
@@ -82,6 +102,7 @@
 <body>
 <div id="wrap">
   <canvas id="game"></canvas>
+  <div id="soundToggle" title="音效开关 (M)">🔊</div>
 
   <div id="hud">
     <div id="lives">❤️❤️❤️</div>
@@ -143,6 +164,194 @@
   }
   window.addEventListener("resize", resize);
   resize();
+
+  // ---------- 音效引擎 (Web Audio API 合成) ----------
+  const Sound = (() => {
+    let ctx = null;
+    let master = null;          // 主增益节点，统一控制音量/静音
+    let musicGain = null;       // 背景音乐专用增益
+    let muted = false;          // 是否静音
+    let musicTimer = null;      // 背景音乐调度句柄
+
+    try { muted = localStorage.getItem("bigFishMuted") === "1"; } catch (e) {}
+
+    // 创建/恢复音频上下文。必须在用户手势内调用一次以保证浏览器允许出声。
+    function ac() {
+      if (!ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;   // 环境不支持 Web Audio，静默降级
+        ctx = new AC();
+        master = ctx.createGain();
+        master.gain.value = muted ? 0 : 1;
+        master.connect(ctx.destination);
+        musicGain = ctx.createGain();
+        musicGain.gain.value = 0.5;
+        musicGain.connect(master);
+      }
+      if (ctx.state === "suspended") { try { ctx.resume(); } catch (e) {} }
+      return ctx;
+    }
+
+    // 用户手势内显式解锁音频（解决首次点击无声音）
+    function unlock() {
+      const c = ac();
+      if (c && c.state === "suspended") c.resume();
+    }
+
+    function setMuted(m) {
+      muted = m;
+      if (ctx && master) master.gain.setTargetAtTime(m ? 0 : 1, ctx.currentTime, 0.01);
+      if (m) stopMusic(); else startMusic();
+      try { localStorage.setItem("bigFishMuted", m ? "1" : "0"); } catch (e) {}
+    }
+    function isMuted() { return muted; }
+
+    function tone(freq, dur, type = "sine", vol = 0.12) {
+      const c = ac(); if (!c) return;
+      const t = c.currentTime;
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      o.connect(g); g.connect(master);
+      o.start(t); o.stop(t + dur);
+    }
+    function sweep(f1, f2, dur, type = "sine", vol = 0.12) {
+      const c = ac(); if (!c) return;
+      const t = c.currentTime;
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = type; o.frequency.setValueAtTime(f1, t);
+      o.frequency.exponentialRampToValueAtTime(Math.max(f2, 20), t + dur);
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      o.connect(g); g.connect(master);
+      o.start(t); o.stop(t + dur);
+    }
+    function noise(dur, vol = 0.04) {
+      const c = ac(); if (!c) return;
+      const t = c.currentTime;
+      const len = Math.floor(c.sampleRate * dur);
+      const buf = c.createBuffer(1, len, c.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      const src = c.createBufferSource(); src.buffer = buf;
+      const g = c.createGain(); g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      const flt = c.createBiquadFilter(); flt.type = "lowpass";
+      flt.frequency.setValueAtTime(500, t);
+      src.connect(flt); flt.connect(g); g.connect(master);
+      src.start(t); src.stop(t + dur);
+    }
+    return {
+      unlock,
+      setMuted,
+      isMuted,
+      eat(pitch = 1) {
+        sweep(170 * pitch, 520 * pitch, 0.11, "sine", 0.10);
+        noise(0.05, 0.025);
+      },
+      comboEat(lv) {
+        const p = 1 + lv * 0.12;
+        sweep(200 * p, 700 * p, 0.09, "sine", 0.13);
+        noise(0.04, 0.035);
+      },
+      hurt() {
+        sweep(140, 45, 0.32, "sawtooth", 0.09);
+        noise(0.18, 0.05);
+      },
+      gameOver() {
+        const c = ac(); if (!c) return;
+        stopMusic();
+        const t = c.currentTime;
+        [380, 300, 220, 130].forEach((f, i) => {
+          const o = c.createOscillator(), g = c.createGain();
+          o.type = "triangle"; o.frequency.setValueAtTime(f, t + i * 0.18);
+          g.gain.setValueAtTime(0.09, t + i * 0.18);
+          g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.18 + 0.28);
+          o.connect(g); g.connect(master);
+          o.start(t + i * 0.18); o.stop(t + i * 0.18 + 0.32);
+        });
+      },
+      pickup(type = "rice") {
+        const c = ac(); if (!c) return;
+        const m = { rice: [620, 820], onigiri: [500, 920], sushi: [380, 1100] };
+        const [a, b] = m[type] || [600, 800];
+        // 用 Web Audio 精确调度代替 setTimeout，避免叠加延迟/堆积
+        const t = c.currentTime;
+        const play = (freq, dur, at) => {
+          const o = c.createOscillator(), g = c.createGain();
+          o.type = "sine"; o.frequency.setValueAtTime(freq, at);
+          g.gain.setValueAtTime(0.10, at);
+          g.gain.exponentialRampToValueAtTime(0.001, at + dur);
+          o.connect(g); g.connect(master);
+          o.start(at); o.stop(at + dur);
+        };
+        play(a, 0.07, t);
+        play(b, 0.11, t + 0.055);
+      },
+      bounce() { tone(75, 0.05, "triangle", 0.05); },
+      grow()  { sweep(190, 360, 0.17, "sine", 0.05); },
+      start() {
+        const c = ac(); if (!c) return;
+        const t = c.currentTime;
+        [262, 330, 392, 523].forEach((f, i) => {
+          const o = c.createOscillator(), g = c.createGain();
+          o.type = "sine"; o.frequency.setValueAtTime(f, t + i * 0.09);
+          g.gain.setValueAtTime(0.07, t + i * 0.09);
+          g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.09 + 0.22);
+          o.connect(g); g.connect(master);
+          o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.24);
+        });
+        startMusic();
+      },
+      // 背景音乐：舒缓的海底旋律，循环播放
+      startMusic() {
+        const c = ac(); if (!c || muted) return;
+        stopMusic();
+        // 和弦进行：C - Am - F - G，对应琶音
+        const chords = [
+          [261.6, 329.6, 392.0], // C
+          [220.0, 261.6, 329.6], // Am
+          [174.6, 220.0, 261.6], // F
+          [196.0, 246.9, 293.7], // G
+        ];
+        let next = c.currentTime + 0.1;
+        let step = 0;
+        const playStep = () => {
+          const c = ac(); if (!c || muted) return;
+          const chord = chords[Math.floor(step / 6) % chords.length];
+          const note = chord[step % 3];
+          const o = c.createOscillator(), g = c.createGain();
+          o.type = "sine";
+          o.frequency.setValueAtTime(note, next);
+          // 主音渐弱、渐出，避免刺耳
+          g.gain.setValueAtTime(0.0001, next);
+          g.gain.exponentialRampToValueAtTime(0.05, next + 0.05);
+          g.gain.exponentialRampToValueAtTime(0.0001, next + 1.2);
+          o.connect(g); g.connect(musicGain);
+          o.start(next); o.stop(next + 1.6);
+          next += 0.42;
+          step++;
+          // 每个小节的低音衬托（每 6 步一个根音）
+          if (step % 6 === 0) {
+            const root = chords[Math.floor(step / 6) % chords.length][0] / 2;
+            const bo = c.createOscillator(), bg = c.createGain();
+            bo.type = "sine"; bo.frequency.setValueAtTime(root, next - 0.42);
+            bg.gain.setValueAtTime(0.06, next - 0.42);
+            bg.gain.exponentialRampToValueAtTime(0.0001, next - 0.42 + 0.6);
+            bo.connect(bg); bg.connect(musicGain);
+            bo.start(next - 0.42); bo.stop(next - 0.42 + 0.7);
+          }
+          // 持续调度，永不停止（loop）
+          musicTimer = setTimeout(playStep, (next - c.currentTime) * 1000);
+        };
+        playStep();
+      },
+      stopMusic() {
+        if (musicTimer) { clearTimeout(musicTimer); musicTimer = null; }
+      }
+    };
+  })();
 
   // ---------- 工具 ----------
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -317,13 +526,13 @@
         const bonus = combo >= 2 ? Math.round(gain * 0.5 * Math.min(combo, 6)) : 0;
         score += gain + bonus;
         grow(gain);
+        combo >= 3 ? Sound.comboEat(combo) : Sound.eat();
         burst(f.x, f.y, f.hue, gain + bonus);
-      } else if (f.r >= pr * 1.25) {
         // 致命：明显大 25% 以上才掉命
         if (invincible <= 0) {
           lives--;
-          burst(player.x, player.y, 0, 18);
-          // 被吃惩罚：体型缩小 + 沿反方向弹开，脱离鱼群
+          Sound.hurt();
+          burst(player.x, player.y, 0, 18); // 体型缩小 + 沿反方向弹开，脱离鱼群
           player.r = clamp(player.r * 0.85, 20, MAX_R);
           const kdx = player.x - f.x, kdy = player.y - f.y;
           const kd = Math.hypot(kdx, kdy) || 1;
@@ -356,15 +565,15 @@
     player.vy += uy * 160;
     f.vx -= ux * 120;
     f.vy -= uy * 120;
+    Sound.bounce();
   }
 
   function grow(mass) {
     const r = player.r;
     player.r = Math.sqrt(r * r + mass * 2.2); // 面积增长，慢慢长大
     player.r = clamp(player.r, 20, MAX_R);
+    Sound.grow();
   }
-
-  // ---------- 粒子 ----------
   function makeParticle(x, y, hue) {
     return {
       x, y, hue,
@@ -429,6 +638,7 @@
       const rs = pr + it.r;
       if (dist2(player.x, player.y, it.x, it.y) > rs * rs) continue;
       it.eaten = true;
+      Sound.pickup(it.type.type);
       growBy(it.type.grow);
       score += 5;
       const hue = it.type.type === "rice" ? 50 : (it.type.type === "onigiri" ? 30 : 25);
@@ -739,11 +949,14 @@
     pausedOv.classList.add("hidden");
     reset();
     status = "playing";
+    Sound.unlock();   // 手势内解锁音频
+    Sound.start();    // 开始音效 + 背景音乐
   }
 
   function gameOver() {
     status = "over";
     combo = 0;
+    Sound.gameOver();   // 游戏结束音效 + 停止背景音乐
     if (score > best) {
       best = score;
       try { localStorage.setItem("bigFishBest", String(best)); } catch (e) {}
@@ -787,10 +1000,22 @@
       else if (status === "over") startGame(mode);
     }
     if (e.key === "Escape" || e.key.toLowerCase() === "p") togglePause();
+    if (e.key.toLowerCase() === "m") toggleSound();
   });
-  $("startBtn").addEventListener("click", () => startGame("normal"));
-  $("challengeBtn").addEventListener("click", () => startGame("challenge"));
-  $("restartBtn").addEventListener("click", () => startGame(mode));
+  $("startBtn").addEventListener("click", () => { Sound.unlock(); startGame("normal"); });
+  $("challengeBtn").addEventListener("click", () => { Sound.unlock(); startGame("challenge"); });
+  $("restartBtn").addEventListener("click", () => { Sound.unlock(); startGame(mode); });
+
+  // 静音开关
+  const soundBtn = $("soundToggle");
+  if (Sound.isMuted()) { soundBtn.classList.add("muted"); soundBtn.textContent = "🔇"; }
+  function toggleSound() {
+    const m = !Sound.isMuted();
+    Sound.setMuted(m);
+    soundBtn.classList.toggle("muted", m);
+    soundBtn.textContent = m ? "🔇" : "🔊";
+  }
+  soundBtn.addEventListener("click", () => { Sound.unlock(); toggleSound(); });
 
   // 初始画面渲染（背景与鱼群展示）
   reset();

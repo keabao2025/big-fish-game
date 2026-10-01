@@ -101,11 +101,11 @@
 
   /* 挑战模式结局插图 */
   .end-img {
-    max-width: 68%;
-    max-height: 42vh;
+    max-width: 60%;
+    max-height: 32vh;
     object-fit: contain;
     border-radius: 16px;
-    margin-bottom: 18px;
+    margin-bottom: 14px;
     box-shadow: 0 4px 24px rgba(0,0,0,.35);
   }
   .end-score {
@@ -562,13 +562,13 @@
   // ---------- 玩家 ----------
   let targetX = W / 2, targetY = H / 2;
   function updatePlayer(dt) {
-    const t = Math.min(1, dt * 6);
+    const t = Math.min(1, dt * 5);
     targetX = clamp(targetX, -60, W + 60);
     targetY = clamp(targetY, -60, H + 60);
 
-    player.vx += (targetX - player.x) * t * 6;
-    player.vy += (targetY - player.y) * t * 6;
-    player.vx *= 0.92; player.vy *= 0.92;
+    player.vx += (targetX - player.x) * t * 3.5;
+    player.vy += (targetY - player.y) * t * 3.5;
+    player.vx *= 0.90; player.vy *= 0.90;
     player.x += player.vx * dt;
     player.y += player.vy * dt;
 
@@ -585,8 +585,8 @@
       const rsum = pr + f.r - 6;
       if (dist2(player.x, player.y, f.x, f.y) > rsum * rsum) continue;
 
-      if (pr >= f.r * 1.1) {
-        // 吃掉（明显更小）
+      if (pr >= f.r * 1.05) {
+        // 吃掉（玩家略大即可吃，中立区收窄，更直观）
         f.dead = true;
         const gain = Math.round(f.r * 2);
         combo++; comboTimer = 2.4;
@@ -595,8 +595,8 @@
         grow(gain);
         combo >= 3 ? Sound.comboEat(combo) : Sound.eat();
         burst(f.x, f.y, f.hue, gain + bonus);
-      } else if (f.r >= pr * 1.25) {
-        // 致命：明显大 25% 以上才掉命
+      } else if (f.r >= pr * 1.15) {
+        // 致命：比玩家大 15% 以上就掉命（中立区收窄）
         if (invincible <= 0) {
           lives--;
           Sound.hurt();
@@ -613,6 +613,29 @@
       } else {
         // 中性区：势均力敌，互相弹开（不互吃、不掉命）
         bounce(f);
+      }
+    }
+    fishes = fishes.filter(f => !f.dead);
+  }
+
+  // AI 大鱼吃小鱼：体型更小的 AI 鱼会被更大的 AI 鱼吃掉，但不长体型
+  function checkAIEating() {
+    for (let i = 0; i < fishes.length; i++) {
+      const a = fishes[i];
+      if (a.dead) continue;
+      for (let j = i + 1; j < fishes.length; j++) {
+        const b = fishes[j];
+        if (b.dead) continue;
+        const rsum = a.r + b.r - 4;
+        if (dist2(a.x, a.y, b.x, b.y) > rsum * rsum) continue;
+        // 明显更大的那方吃掉另一方（阈值 1.2 倍），被吃方消失，吃方不变大
+        if (a.r >= b.r * 1.2) {
+          b.dead = true;
+          burst(b.x, b.y, b.hue, 5);
+        } else if (b.r >= a.r * 1.2) {
+          a.dead = true;
+          burst(a.x, a.y, a.hue, 5);
+        }
       }
     }
     fishes = fishes.filter(f => !f.dead);
@@ -863,6 +886,22 @@
     ctx.translate(x, y);
     ctx.rotate(angle);
 
+    // 可吃/危险指示光圈（仅 AI 鱼）：绿=能吃，红=危险，无圈=势均力敌
+    if (!isPlayer && status === "playing") {
+      const pr = player.r;
+      let ringColor = null;
+      if (pr >= f.r * 1.05) ringColor = "rgba(80,255,160,0.55)";   // 可比玩家小 → 能吃
+      else if (f.r >= pr * 1.15) ringColor = "rgba(255,90,80,0.6)"; // 比玩家大15%+ → 危险
+      if (ringColor) {
+        const pulse = r * 1.35 + Math.sin(performance.now() / 220 + x) * 2;
+        ctx.strokeStyle = ringColor;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, pulse, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
     const bodyLen = r * (isPlayer ? 2.1 : 2.4);
     const sat = isPlayer ? 88 : 70;
     const light = isPlayer ? 60 : 55;
@@ -991,13 +1030,16 @@
       updatePlayer(dt);
       for (const f of fishes) updateFish(f, dt);
       checkEating();
-      updateParticles(dt);
+      checkAIEating();
       updateItems(dt);
       checkItemCollision();
       // 补充鱼
       const target = 26;
       if (fishes.length < target && Math.random() < 0.08) spawnFish(false);
     }
+
+    // 粒子在 over 状态也持续消散，避免死亡后画面完全冻结的死机感
+    updateParticles(dt);
 
     // 绘制鱼（玩家在最上层）
     for (const f of fishes) drawFish(f, false);
@@ -1041,6 +1083,7 @@
     combo = 0;
     Sound.gameOver();   // 游戏结束音效 + 停止背景音乐
 
+    const firstGame = best === 0;              // 首次游玩（尚无历史最高分）
     const isNewRecord = score > best;
     if (isNewRecord) {
       best = score;
@@ -1058,16 +1101,16 @@
         if (cmScore) cmScore.textContent = "得分 " + score;
         if (challengeMax) challengeMax.classList.remove("hidden");
         else if (overOv) { overOv.classList.remove("hidden"); fnewEl.textContent = ""; }
-        // 若同时破纪录：先展示深海鱼霸，稍后切换为「我不是大肥鱼」
-        if (isNewRecord) {
+        // 若破纪录（含首次游玩算新纪录）：先展示深海鱼霸，稍后切换为「我不是大肥鱼」
+        if (isNewRecord || firstGame) {
           maxSwitchTimer = setTimeout(() => {
             if (challengeMax) challengeMax.classList.add("hidden");
             if (crScore) crScore.textContent = "得分 " + score;
             if (challengeRecord) challengeRecord.classList.remove("hidden");
           }, 2500);
         }
-      } else if (isNewRecord) {
-        // 破纪录但未满级：我不是大肥鱼
+      } else if (isNewRecord || firstGame) {
+        // 破纪录（或首次游玩）但未满级：我不是大肥鱼
         if (crScore) crScore.textContent = "得分 " + score;
         if (challengeRecord) challengeRecord.classList.remove("hidden");
         else if (overOv) { overOv.classList.remove("hidden"); fnewEl.textContent = "🎉 新纪录！"; }

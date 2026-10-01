@@ -98,6 +98,28 @@
   #fnew { font-size: 15px; margin-top: 4px; color: #7ee6ff; font-weight: 700; }
 
   #paused .title { font-size: 40px; }
+
+  /* 挑战模式结局插图 */
+  .end-img {
+    max-width: 68%;
+    max-height: 42vh;
+    object-fit: contain;
+    border-radius: 16px;
+    margin-bottom: 18px;
+    box-shadow: 0 4px 24px rgba(0,0,0,.35);
+  }
+  .end-score {
+    font-size: 30px; font-weight: 700;
+    color: #ffd54a; margin-bottom: 4px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.4);
+  }
+  .end-new {
+    font-size: 18px; color: #7ee6ff; font-weight: 700;
+    margin-bottom: 16px;
+  }
+  .end-hint {
+    font-size: 15px; opacity: .8; margin-bottom: 16px;
+  }
 </style>
 </head>
 <body>
@@ -140,6 +162,22 @@
     <div class="title">已暂停</div>
     <div class="hint">按 <b>Esc</b> 或 <b>P</b> 继续</div>
   </div>
+
+  <!-- 挑战模式 · 破纪录 -->
+  <div id="challengeRecord" class="overlay hidden">
+    <img class="end-img" src="图片/我不是大肥鱼.jpg" alt="我不是大肥鱼">
+    <div class="end-score" id="crScore">得分 0</div>
+    <div class="end-new" id="crNew">🎉 新纪录！</div>
+    <button class="btn" id="crRestartBtn">再来一局</button>
+  </div>
+
+  <!-- 挑战模式 · 没破纪录 -->
+  <div id="challengeFail" class="overlay hidden">
+    <img class="end-img" src="图片/没吃饱喵！.jpg" alt="没吃饱喵">
+    <div class="end-score" id="cfScore">得分 0</div>
+    <div class="end-hint">最高记录 <span id="cfBest">0</span></div>
+    <button class="btn" id="cfRestartBtn">再来一局</button>
+  </div>
 </div>
 
 <script>
@@ -153,7 +191,9 @@
   const scoreVal = $("scoreVal"), levelVal = $("levelVal"), sizeFill = $("sizeFill"),
         comboEl = $("combo"), startOv = $("start"), overOv = $("gameover"),
         finalEl = $("final"), bestEl = $("best"), fnewEl = $("fnew"), pausedOv = $("paused"),
-        livesEl = $("lives"), modeTag = $("modeTag");
+        livesEl = $("lives"), modeTag = $("modeTag"),
+        challengeRecord = $("challengeRecord"), challengeFail = $("challengeFail"),
+        crScore = $("crScore"), cfScore = $("cfScore"), cfBest = $("cfBest");
 
   let W = 0, H = 0, DPR = 1;
   function resize() {
@@ -976,6 +1016,8 @@
     startOv.classList.add("hidden");
     overOv.classList.add("hidden");
     pausedOv.classList.add("hidden");
+    challengeRecord.classList.add("hidden");
+    challengeFail.classList.add("hidden");
     reset();
     status = "playing";
     Sound.unlock();   // 手势内解锁音频
@@ -986,17 +1028,35 @@
     status = "over";
     combo = 0;
     Sound.gameOver();   // 游戏结束音效 + 停止背景音乐
-    if (score > best) {
+
+    const isNewRecord = score > best;
+    if (isNewRecord) {
       best = score;
       try { localStorage.setItem("bigFishBest", String(best)); } catch (e) {}
-      fnewEl.textContent = "🎉 新纪录！";
-    } else {
-      fnewEl.textContent = "";
     }
-    finalEl.textContent = "得分 " + score;
-    modeTag.textContent = mode === "challenge" ? "挑战模式 · 一条命" : "普通模式 · 三条命";
-    bestEl.textContent = "最高记录 " + best;
-    overOv.classList.remove("hidden");
+
+    if (mode === "challenge") {
+      // 挑战模式：显示插图结局
+      if (isNewRecord) {
+        crScore.textContent = "得分 " + score;
+        challengeRecord.classList.remove("hidden");
+      } else {
+        cfScore.textContent = "得分 " + score;
+        cfBest.textContent = best;
+        challengeFail.classList.remove("hidden");
+      }
+    } else {
+      // 普通模式
+      if (isNewRecord) {
+        fnewEl.textContent = "🎉 新纪录！";
+      } else {
+        fnewEl.textContent = "";
+      }
+      finalEl.textContent = "得分 " + score;
+      modeTag.textContent = "普通模式 · 三条命";
+      bestEl.textContent = "最高记录 " + best;
+      overOv.classList.remove("hidden");
+    }
     // 大爆发
     burst(player.x, player.y, 0, 20);
   }
@@ -1034,6 +1094,8 @@
   $("startBtn").addEventListener("click", () => { Sound.unlock(); startGame("normal"); });
   $("challengeBtn").addEventListener("click", () => { Sound.unlock(); startGame("challenge"); });
   $("restartBtn").addEventListener("click", () => { Sound.unlock(); startGame(mode); });
+  $("crRestartBtn").addEventListener("click", () => { Sound.unlock(); startGame("challenge"); });
+  $("cfRestartBtn").addEventListener("click", () => { Sound.unlock(); startGame("challenge"); });
 
   // 静音开关
   const soundBtn = $("soundToggle");

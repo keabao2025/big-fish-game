@@ -165,7 +165,7 @@
 
   <!-- 挑战模式 · 破纪录 -->
   <div id="challengeRecord" class="overlay hidden">
-    <img class="end-img" src="图片/我不是大肥鱼.jpg" alt="我不是大肥鱼">
+    <img class="end-img" src="图片/big-fish-end.jpg" alt="我不是大肥鱼">
     <div class="end-score" id="crScore">得分 0</div>
     <div class="end-new" id="crNew">🎉 新纪录！</div>
     <button class="btn" id="crRestartBtn">再来一局</button>
@@ -173,7 +173,7 @@
 
   <!-- 挑战模式 · 没破纪录 -->
   <div id="challengeFail" class="overlay hidden">
-    <img class="end-img" src="图片/没吃饱喵！.jpg" alt="没吃饱喵">
+    <img class="end-img" src="图片/hungry-end.jpg" alt="没吃饱喵">
     <div class="end-score" id="cfScore">得分 0</div>
     <div class="end-hint">最高记录 <span id="cfBest">0</span></div>
     <button class="btn" id="cfRestartBtn">再来一局</button>
@@ -473,13 +473,13 @@
       }
     } else {
       bigRatio = rand(0.3, 1.15);
-      // 按当前玩家体型动态生成，保证可吃与危险并存
-      if (Math.random() < 0.36) {
-        r = rand(pr * 1.2, pr * 1.6);   // 始终比玩家大 1.2~1.6 倍，满级也有致命威胁
-      } else if (Math.random() < 0.55) {
-        r = rand(pr * 0.35, pr * 0.8);  // 明显小鱼
+      // 按玩家体型动态生成——降低大鱼占比，中后期也有充沛小鱼可吃
+      if (Math.random() < 0.18) {
+        r = rand(pr * 1.2, pr * 1.5);   // 大鱼：约18%，有威胁但不泛滥
+      } else if (Math.random() < 0.82) {
+        r = rand(pr * 0.4, pr * 0.75);  // 明显小鱼：约64%，确保可吃
       } else {
-        r = rand(pr * 0.8, pr + 6);     // 接近玩家，紧张刺激
+        r = rand(pr * 0.75, pr - 4);    // 接近玩家略小：约18%，紧张但可吃
       }
     }
 
@@ -1016,8 +1016,9 @@
     startOv.classList.add("hidden");
     overOv.classList.add("hidden");
     pausedOv.classList.add("hidden");
-    challengeRecord.classList.add("hidden");
-    challengeFail.classList.add("hidden");
+    if (challengeRecord) challengeRecord.classList.add("hidden");
+    if (challengeFail) challengeFail.classList.add("hidden");
+    canvas.style.pointerEvents = "auto"; // 恢复画布交互
     reset();
     status = "playing";
     Sound.unlock();   // 手势内解锁音频
@@ -1035,15 +1036,20 @@
       try { localStorage.setItem("bigFishBest", String(best)); } catch (e) {}
     }
 
+    // 先禁用画布交互，防止 canvas 拦截按钮点击
+    canvas.style.pointerEvents = "none";
+
     if (mode === "challenge") {
-      // 挑战模式：显示插图结局
+      // 挑战模式：显示插图结局（带防御性 null 检查，避免 DOM 缺失导致死屏）
       if (isNewRecord) {
-        crScore.textContent = "得分 " + score;
-        challengeRecord.classList.remove("hidden");
+        if (crScore) crScore.textContent = "得分 " + score;
+        if (challengeRecord) challengeRecord.classList.remove("hidden");
+        else if (overOv) { overOv.classList.remove("hidden"); fnewEl.textContent = "🎉 新纪录！"; }
       } else {
-        cfScore.textContent = "得分 " + score;
-        cfBest.textContent = best;
-        challengeFail.classList.remove("hidden");
+        if (cfScore) cfScore.textContent = "得分 " + score;
+        if (cfBest) cfBest.textContent = best;
+        if (challengeFail) challengeFail.classList.remove("hidden");
+        else if (overOv) { overOv.classList.remove("hidden"); fnewEl.textContent = ""; }
       }
     } else {
       // 普通模式

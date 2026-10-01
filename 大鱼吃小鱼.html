@@ -360,6 +360,24 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const dist2 = (x1, y1, x2, y2) => { const dx = x1 - x2, dy = y1 - y2; return dx * dx + dy * dy; };
 
+  // ---------- 玩家图片（自定义形象）----------
+  let playerImg = new Image();
+  let playerImgReady = false;
+  let playerImgFlipped = null; // 水平翻转后的离屏画布（图片朝左 → 转成朝右，随 angle 朝运动方向）
+  playerImg.onload = () => {
+    try {
+      const c = document.createElement("canvas");
+      c.width = playerImg.width; c.height = playerImg.height;
+      const g = c.getContext("2d");
+      g.translate(c.width, 0); g.scale(-1, 1);       // 水平镜像
+      g.drawImage(playerImg, 0, 0);
+      playerImgFlipped = c;
+      playerImgReady = true;
+    } catch (e) { playerImgReady = false; }
+  };
+  playerImg.onerror = () => { playerImgReady = false; };
+  playerImg.src = "图片/player.png";
+
   // ---------- 游戏状态 ----------
   let player, fishes, bubbles, plants, particles, items;
   let score = 0, combo = 0, comboTimer = 0, status = "idle"; // idle | playing | over | paused
@@ -784,6 +802,15 @@
     ctx.save();
     if (isPlayer && invincible > 0) {
       ctx.globalAlpha = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(performance.now() / 60));
+    }
+    // 玩家使用自定义图片形象
+    if (isPlayer && playerImgReady && playerImgFlipped) {
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      const size = r * 2.2;                      // 与玩家体型匹配的显示尺寸
+      ctx.drawImage(playerImgFlipped, -size / 2, -size / 2, size, size);
+      ctx.restore();
+      return;
     }
     ctx.translate(x, y);
     ctx.rotate(angle);

@@ -250,7 +250,7 @@
     function setMuted(m) {
       muted = m;
       if (ctx && master) master.gain.setTargetAtTime(m ? 0 : 1, ctx.currentTime, 0.01);
-      if (m) stopMusic(); else startMusic();
+      if (m) this.stopMusic(); else this.startMusic();
       try { localStorage.setItem("bigFishMuted", m ? "1" : "0"); } catch (e) {}
     }
     function isMuted() { return muted; }
@@ -310,7 +310,7 @@
       },
       gameOver() {
         const c = ac(); if (!c) return;
-        stopMusic();
+        this.stopMusic();
         const t = c.currentTime;
         [380, 300, 220, 130].forEach((f, i) => {
           const o = c.createOscillator(), g = c.createGain();
@@ -351,12 +351,12 @@
           o.connect(g); g.connect(master);
           o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.24);
         });
-        startMusic();
+        this.startMusic();
       },
       // 背景音乐：舒缓的海底旋律，循环播放
       startMusic() {
         const c = ac(); if (!c || muted) return;
-        stopMusic();
+        this.stopMusic();
         // 和弦进行：C - Am - F - G，对应琶音
         const chords = [
           [261.6, 329.6, 392.0], // C
@@ -481,13 +481,14 @@
       }
     } else {
       bigRatio = rand(0.3, 1.15);
-      // 按玩家体型动态生成——降低大鱼占比，中后期也有充沛小鱼可吃
-      if (Math.random() < 0.18) {
-        r = rand(pr * 1.2, pr * 1.5);   // 大鱼：约18%，有威胁但不泛滥
-      } else if (Math.random() < 0.82) {
-        r = rand(pr * 0.4, pr * 0.75);  // 明显小鱼：约64%，确保可吃
+      // 按玩家体型动态生成——降低大鱼占比，补充相近体型(互相撞开)，保证中后期有活路
+      const roll = Math.random();
+      if (roll < 0.12) {
+        r = rand(pr * 1.1, pr * 1.3);    // 大鱼：约12%，有威胁但不泛滥
+      } else if (roll < 0.42) {
+        r = rand(pr * 0.85, pr * 1.12);  // 相近体型：约30%，互相撞开(不互吃不掉命)
       } else {
-        r = rand(pr * 0.75, pr - 4);    // 接近玩家略小：约18%，紧张但可吃
+        r = rand(pr * 0.4, pr * 0.8);    // 明显小鱼：约58%，可吃
       }
     }
 
@@ -562,18 +563,27 @@
   // ---------- 玩家 ----------
   let targetX = W / 2, targetY = H / 2;
   function updatePlayer(dt) {
-    const t = Math.min(1, dt * 5);
+    const t = Math.min(1, dt * 4);
     targetX = clamp(targetX, -60, W + 60);
     targetY = clamp(targetY, -60, H + 60);
 
-    player.vx += (targetX - player.x) * t * 3.5;
-    player.vy += (targetY - player.y) * t * 3.5;
-    player.vx *= 0.90; player.vy *= 0.90;
+    player.vx += (targetX - player.x) * t * 2.0;
+    player.vy += (targetY - player.y) * t * 2.0;
+    player.vx *= 0.88; player.vy *= 0.88;
+
+    // 最大速度上限：后期体型越大越慢更稳，避免鼠标甩动失控撞大鱼
+    const maxSpd = clamp(540 - player.r * 1.5, 240, 540);
+    let spd = Math.hypot(player.vx, player.vy);
+    if (spd > maxSpd) {
+      player.vx = player.vx / spd * maxSpd;
+      player.vy = player.vy / spd * maxSpd;
+      spd = maxSpd;
+    }
+
     player.x += player.vx * dt;
     player.y += player.vy * dt;
 
     // 朝向（按移动方向，静止则保持）
-    const spd = Math.hypot(player.vx, player.vy);
     if (spd > 8) player.angle = Math.atan2(player.vy, player.vx);
   }
 
@@ -635,6 +645,18 @@
         } else if (b.r >= a.r * 1.2) {
           a.dead = true;
           burst(a.x, a.y, a.hue, 5);
+        } else {
+          // 体型相近：互相推开，避免重叠穿模
+          const dx = a.x - b.x, dy = a.y - b.y;
+          const d = Math.hypot(dx, dy) || 1;
+          const overlap = (a.r + b.r) - d;
+          if (overlap > 0) {
+            const ux = dx / d, uy = dy / d;
+            a.x += ux * overlap * 0.5;
+            a.y += uy * overlap * 0.5;
+            b.x -= ux * overlap * 0.5;
+            b.y -= uy * overlap * 0.5;
+          }
         }
       }
     }
@@ -1092,9 +1114,9 @@
     combo = 0;
     Sound.gameOver();   // 游戏结束音效 + 停止背景音乐
 
-    const firstGame = best === 0;              // 首次游玩（尚无历史最高分）
-    const isNewRecord = score > best;
-    if (isNewRecord) {
+    // 首局(best=0)或突破纪录：都显示「我不是大肥鱼」，并记录成绩
+    const isNewRecord = score > best || best === 0;
+    if (score > best) {
       best = score;
       try { localStorage.setItem("bigFishBest", String(best)); } catch (e) {}
     }
@@ -1110,16 +1132,16 @@
         if (cmScore) cmScore.textContent = "得分 " + score;
         if (challengeMax) challengeMax.classList.remove("hidden");
         else if (overOv) { overOv.classList.remove("hidden"); fnewEl.textContent = ""; }
-        // 若破纪录（含首次游玩算新纪录）：先展示深海鱼霸，稍后切换为「我不是大肥鱼」
-        if (isNewRecord || firstGame) {
+        // 若同时破纪录：先展示深海鱼霸，稍后切换为「我不是大肥鱼」
+        if (isNewRecord) {
           maxSwitchTimer = setTimeout(() => {
             if (challengeMax) challengeMax.classList.add("hidden");
             if (crScore) crScore.textContent = "得分 " + score;
             if (challengeRecord) challengeRecord.classList.remove("hidden");
           }, 2500);
         }
-      } else if (isNewRecord || firstGame) {
-        // 破纪录（或首次游玩）但未满级：我不是大肥鱼
+      } else if (isNewRecord) {
+        // 破纪录（突破历史成绩）但未满级：我不是大肥鱼
         if (crScore) crScore.textContent = "得分 " + score;
         if (challengeRecord) challengeRecord.classList.remove("hidden");
         else if (overOv) { overOv.classList.remove("hidden"); fnewEl.textContent = "🎉 新纪录！"; }

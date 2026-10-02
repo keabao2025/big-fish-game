@@ -441,7 +441,8 @@
   const START_R = 34;   // 初始体型（即 1 级基准）
   const MAX_R = 140;    // 体型上限
   const SLOW_DURATION = 3.5;  // 藤壶减速持续时间（秒）
-  const SLOW_FACTOR = 0.45;   // 藤壶把速度降到 45%
+  const SLOW_FACTOR = 0.25;   // 藤壶把追近速度降到 25%（明显变慢）
+  const SLOW_MAX_SPEED = 80;  // 藤壶减速时的硬速度上限（px/秒），体感像被拖住
 
   function reset() {
     player = {
@@ -575,15 +576,22 @@
     targetY = clamp(targetY, -60, H + 60);
 
     // 直接位置缓动：跟手顺滑、无惯性滑行（手感自然）
-    // 体型越大追踪略慢更笨重；藤壶减速时进一步减弱
+    // 体型越大追踪略慢更笨重；藤壶减速时追近速度大幅降低 + 硬速度上限
     const sizeFactor = clamp(1 - (player.r - START_R) / (MAX_R - START_R) * 0.3, 0.7, 1);
     let k = Math.min(1, dt * 6.5 * sizeFactor);
     if (slowTimer > 0) k *= SLOW_FACTOR;
 
-    const dx = targetX - player.x;
-    const dy = targetY - player.y;
-    player.x += dx * k;
-    player.y += dy * k;
+    let dx = targetX - player.x;
+    let dy = targetY - player.y;
+    let mx = dx * k, my = dy * k;
+    // 藤壶减速硬限速：每帧最多移动一小段，体感明显"被拖住"
+    if (slowTimer > 0) {
+      const maxMove = SLOW_MAX_SPEED * dt;
+      const mv = Math.hypot(mx, my);
+      if (mv > maxMove) { mx = mx / mv * maxMove; my = my / mv * maxMove; }
+    }
+    player.x += mx;
+    player.y += my;
 
     // 朝向（按移动方向，位移很小时保持）
     if (Math.hypot(dx, dy) > 2) player.angle = Math.atan2(dy, dx);
@@ -770,6 +778,85 @@
     items = items.filter(it => !it.eaten);
   }
 
+  // 惊恐表情绘制（八字眉 + 大圆眼高光 + O 型小嘴），藤壶与玩家被黏时共用
+  function drawPanicFace(r) {
+    // 八字眉（内端下压，委屈皱眉）
+    ctx.strokeStyle = "#7a6f60";
+    ctx.lineWidth = Math.max(1.2, r * 0.045);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.32, -r * 0.18); ctx.lineTo(-r * 0.12, -r * 0.07);
+    ctx.moveTo(r * 0.32, -r * 0.18); ctx.lineTo(r * 0.12, -r * 0.07);
+    ctx.stroke();
+    // 大黑点眼睛（惊恐瞪圆）
+    ctx.fillStyle = "#2b2b2b";
+    ctx.beginPath();
+    ctx.arc(-r * 0.2, -r * 0.02, r * 0.085, 0, Math.PI * 2);
+    ctx.arc(r * 0.2, -r * 0.02, r * 0.085, 0, Math.PI * 2);
+    ctx.fill();
+    // 眼睛高光（更大，显惊恐水汪汪）
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.arc(-r * 0.23, -r * 0.05, r * 0.032, 0, Math.PI * 2);
+    ctx.arc(r * 0.17, -r * 0.05, r * 0.032, 0, Math.PI * 2);
+    ctx.fill();
+    // 惊恐微张的小嘴（O 型）
+    ctx.fillStyle = "#4a2f2f";
+    ctx.beginPath();
+    ctx.ellipse(0, r * 0.18, r * 0.075, r * 0.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 藤壶形状绘制（壳+开口+水泡+委屈惊恐脸），可复用：道具掉落 & 粘在玩家尾巴上
+  function drawBarnacleShape(r, sway) {
+    const ph = performance.now() / 350;
+    // 外壳主体（宽底窄口的小火山/圆台形，灰白乳白，岩石质感）
+    ctx.fillStyle = "#e8e4d8";
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.78, r * 0.6);
+    ctx.quadraticCurveTo(-r * 0.58, -r * 0.12, -r * 0.34, -r * 0.72);
+    ctx.lineTo(r * 0.34, -r * 0.72);
+    ctx.quadraticCurveTo(r * 0.58, -r * 0.12, r * 0.78, r * 0.6);
+    ctx.closePath();
+    ctx.fill();
+    // 外壳横向生长纹（环状突起，浅灰分界线）
+    ctx.strokeStyle = "#c0beb4";
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 4; i++) {
+      const yy = -r * 0.42 + i * r * 0.26;
+      const w = r * (0.5 + i * 0.075);
+      ctx.beginPath();
+      ctx.moveTo(-w, yy);
+      ctx.quadraticCurveTo(0, yy + r * 0.07, w, yy);
+      ctx.stroke();
+    }
+    // 顶部深蓝紫开口（中心近黑）
+    ctx.fillStyle = "#1d2b53";
+    ctx.beginPath();
+    ctx.ellipse(0, -r * 0.72, r * 0.34, r * 0.12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#141c33";
+    ctx.beginPath();
+    ctx.ellipse(0, -r * 0.72, r * 0.22, r * 0.075, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // 冒出的淡蓝半透明水泡（摆动上飘，带高光）
+    for (let i = 0; i < 4; i++) {
+      const bx = Math.sin(sway + i * 1.9 + ph) * r * 0.22;
+      const by = -r * 0.84 - i * r * 0.16;
+      const br = r * (0.16 - i * 0.026);
+      ctx.fillStyle = "rgba(120,200,255,0.55)";
+      ctx.beginPath();
+      ctx.arc(bx, by, br, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      ctx.beginPath();
+      ctx.arc(bx - br * 0.35, by - br * 0.35, br * 0.34, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 委屈惊恐表情
+    drawPanicFace(r);
+  }
+
   function drawItem(it) {
     const { type, r } = it;
     ctx.save();
@@ -818,65 +905,7 @@
         ctx.fill();
       }
     } else if (type.type === "barnacle") {
-      // 藤壶：拟人化灰白锥形壳 + 深蓝口 + 冒淡蓝水泡 + 委屈小脸
-      const ph = performance.now() / 350;
-      // 外壳主体（圆台锥形：底部宽、顶部窄，灰白乳白）
-      ctx.fillStyle = "#e8e4d8";
-      ctx.beginPath();
-      ctx.moveTo(-r * 0.72, r * 0.55);
-      ctx.quadraticCurveTo(-r * 0.56, -r * 0.15, -r * 0.36, -r * 0.7);
-      ctx.lineTo(r * 0.36, -r * 0.7);
-      ctx.quadraticCurveTo(r * 0.56, -r * 0.15, r * 0.72, r * 0.55);
-      ctx.closePath();
-      ctx.fill();
-      // 外壳横向生长纹（环状突起，风化礁石感）
-      ctx.strokeStyle = "#c0beb4";
-      ctx.lineWidth = 1.4;
-      for (let i = 0; i < 3; i++) {
-        const yy = -r * 0.32 + i * r * 0.27;
-        const w = r * (0.46 + i * 0.09);
-        ctx.beginPath();
-        ctx.moveTo(-w, yy);
-        ctx.quadraticCurveTo(0, yy + r * 0.06, w, yy);
-        ctx.stroke();
-      }
-      // 顶部深蓝紫色开口
-      ctx.fillStyle = "#2a3557";
-      ctx.beginPath();
-      ctx.ellipse(0, -r * 0.7, r * 0.36, r * 0.12, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // 冒出的淡蓝半透明水泡（摆动上飘，带高光）
-      for (let i = 0; i < 3; i++) {
-        const bx = Math.sin(it.sway + i * 2.1 + ph) * r * 0.2;
-        const by = -r * 0.82 - i * r * 0.17;
-        const br = r * (0.15 - i * 0.03);
-        ctx.fillStyle = "rgba(120,200,255,0.55)";
-        ctx.beginPath();
-        ctx.arc(bx, by, br, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "rgba(255,255,255,0.75)";
-        ctx.beginPath();
-        ctx.arc(bx - br * 0.35, by - br * 0.35, br * 0.32, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // 委屈表情：两个黑点眼睛 + 微张小嘴
-      ctx.fillStyle = "#2b2b2b";
-      ctx.beginPath();
-      ctx.arc(-r * 0.22, -r * 0.04, r * 0.065, 0, Math.PI * 2);
-      ctx.arc(r * 0.22, -r * 0.04, r * 0.065, 0, Math.PI * 2);
-      ctx.fill();
-      // 眼睛高光
-      ctx.fillStyle = "#ffffff";
-      ctx.beginPath();
-      ctx.arc(-r * 0.24, -r * 0.06, r * 0.022, 0, Math.PI * 2);
-      ctx.arc(r * 0.2, -r * 0.06, r * 0.022, 0, Math.PI * 2);
-      ctx.fill();
-      // 微张的小嘴（委屈下弯）
-      ctx.strokeStyle = "#2b2b2b";
-      ctx.lineWidth = Math.max(1, r * 0.05);
-      ctx.beginPath();
-      ctx.arc(0, r * 0.2, r * 0.11, Math.PI * 0.25, Math.PI * 0.75);
-      ctx.stroke();
+      drawBarnacleShape(r, it.sway);
     }
 
     // 呼吸光圈提示（藤壶用警示橙，食物用白色）
@@ -981,7 +1010,7 @@
       ctx.rotate(angle);
       const size = r * 2.2;                      // 与玩家体型匹配的显示尺寸
       ctx.drawImage(playerImgFlipped, -size / 2, -size / 2, size, size);
-      // 藤壶减速光晕：被减速时围绕玩家的淡蓝光环
+      // 藤壶减速：围绕玩家的淡蓝光环 + 尾巴粘藤壶 + 头部惊恐表情
       if (slowTimer > 0) {
         const pulse = size * 0.6 + Math.sin(performance.now() / 120) * 3;
         ctx.strokeStyle = "rgba(120,190,255," + (0.4 + 0.25 * Math.sin(performance.now() / 150)) + ")";
@@ -993,6 +1022,16 @@
         ctx.beginPath();
         ctx.arc(0, 0, pulse, 0, Math.PI * 2);
         ctx.fill();
+        // 藤壶粘在尾巴上（图片朝右，尾巴在 -x 方向）
+        ctx.save();
+        ctx.translate(-size * 0.42, -size * 0.02);
+        drawBarnacleShape(clamp(r * 0.5, 12, 40), 0);
+        ctx.restore();
+        // 玩家惊恐表情（头部，+x 方向）
+        ctx.save();
+        ctx.translate(size * 0.26, -size * 0.03);
+        drawPanicFace(clamp(r * 0.6, 13, 60));
+        ctx.restore();
       }
       ctx.restore();
       return;

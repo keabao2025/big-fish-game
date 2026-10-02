@@ -568,32 +568,25 @@
   // ---------- 玩家 ----------
   let targetX = W / 2, targetY = H / 2;
   function updatePlayer(dt) {
-    const t = Math.min(1, dt * 4);
-    targetX = clamp(targetX, -60, W + 60);
-    targetY = clamp(targetY, -60, H + 60);
-
     // 藤壶减速倒计时
     if (slowTimer > 0) slowTimer -= dt;
 
-    player.vx += (targetX - player.x) * t * 2.0;
-    player.vy += (targetY - player.y) * t * 2.0;
-    player.vx *= 0.88; player.vy *= 0.88;
+    targetX = clamp(targetX, -60, W + 60);
+    targetY = clamp(targetY, -60, H + 60);
 
-    // 最大速度上限：后期体型越大越慢更稳；被藤壶减速时进一步降低
-    let maxSpd = clamp(540 - player.r * 1.5, 240, 540);
-    if (slowTimer > 0) maxSpd *= SLOW_FACTOR;
-    let spd = Math.hypot(player.vx, player.vy);
-    if (spd > maxSpd) {
-      player.vx = player.vx / spd * maxSpd;
-      player.vy = player.vy / spd * maxSpd;
-      spd = maxSpd;
-    }
+    // 直接位置缓动：跟手顺滑、无惯性滑行（手感自然）
+    // 体型越大追踪略慢更笨重；藤壶减速时进一步减弱
+    const sizeFactor = clamp(1 - (player.r - START_R) / (MAX_R - START_R) * 0.3, 0.7, 1);
+    let k = Math.min(1, dt * 6.5 * sizeFactor);
+    if (slowTimer > 0) k *= SLOW_FACTOR;
 
-    player.x += player.vx * dt;
-    player.y += player.vy * dt;
+    const dx = targetX - player.x;
+    const dy = targetY - player.y;
+    player.x += dx * k;
+    player.y += dy * k;
 
-    // 朝向（按移动方向，静止则保持）
-    if (spd > 8) player.angle = Math.atan2(player.vy, player.vx);
+    // 朝向（按移动方向，位移很小时保持）
+    if (Math.hypot(dx, dy) > 2) player.angle = Math.atan2(dy, dx);
   }
 
   // ---------- 碰撞与进食 ----------
@@ -825,42 +818,65 @@
         ctx.fill();
       }
     } else if (type.type === "barnacle") {
-      // 藤壶：灰白石灰质锥形壳 + 顶部开口 + 摆动触须（陷阱，一眼看出不能吃）
-      const wag = Math.sin(it.sway * 2 + performance.now() / 300) * 0.3;
-      // 锥形外壳（上窄下宽）
-      ctx.fillStyle = "#9aa5ad";
+      // 藤壶：拟人化灰白锥形壳 + 深蓝口 + 冒淡蓝水泡 + 委屈小脸
+      const ph = performance.now() / 350;
+      // 外壳主体（圆台锥形：底部宽、顶部窄，灰白乳白）
+      ctx.fillStyle = "#e8e4d8";
       ctx.beginPath();
-      ctx.moveTo(-r * 0.55, r * 0.7);
-      ctx.quadraticCurveTo(-r * 0.5, 0, -r * 0.28, -r * 0.45);
-      ctx.lineTo(r * 0.28, -r * 0.45);
-      ctx.quadraticCurveTo(r * 0.5, 0, r * 0.55, r * 0.7);
+      ctx.moveTo(-r * 0.72, r * 0.55);
+      ctx.quadraticCurveTo(-r * 0.56, -r * 0.15, -r * 0.36, -r * 0.7);
+      ctx.lineTo(r * 0.36, -r * 0.7);
+      ctx.quadraticCurveTo(r * 0.56, -r * 0.15, r * 0.72, r * 0.55);
       ctx.closePath();
       ctx.fill();
-      // 外壳横向纹路
-      ctx.strokeStyle = "rgba(70,80,88,0.35)";
-      ctx.lineWidth = 1;
+      // 外壳横向生长纹（环状突起，风化礁石感）
+      ctx.strokeStyle = "#c0beb4";
+      ctx.lineWidth = 1.4;
       for (let i = 0; i < 3; i++) {
-        const yy = -r * 0.18 + i * r * 0.26;
+        const yy = -r * 0.32 + i * r * 0.27;
+        const w = r * (0.46 + i * 0.09);
         ctx.beginPath();
-        ctx.moveTo(-r * (0.28 + i * 0.09), yy);
-        ctx.lineTo(r * (0.28 + i * 0.09), yy);
+        ctx.moveTo(-w, yy);
+        ctx.quadraticCurveTo(0, yy + r * 0.06, w, yy);
         ctx.stroke();
       }
-      // 顶部开口
-      ctx.fillStyle = "#4a5259";
+      // 顶部深蓝紫色开口
+      ctx.fillStyle = "#2a3557";
       ctx.beginPath();
-      ctx.ellipse(0, -r * 0.43, r * 0.28, r * 0.1, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, -r * 0.7, r * 0.36, r * 0.12, 0, 0, Math.PI * 2);
       ctx.fill();
-      // 摆动的触须
-      ctx.strokeStyle = "#c9a86a";
-      ctx.lineWidth = 1.6;
-      for (let i = 0; i < 5; i++) {
-        const a = -0.6 + i * 0.3 + wag;
+      // 冒出的淡蓝半透明水泡（摆动上飘，带高光）
+      for (let i = 0; i < 3; i++) {
+        const bx = Math.sin(it.sway + i * 2.1 + ph) * r * 0.2;
+        const by = -r * 0.82 - i * r * 0.17;
+        const br = r * (0.15 - i * 0.03);
+        ctx.fillStyle = "rgba(120,200,255,0.55)";
         ctx.beginPath();
-        ctx.moveTo(0, -r * 0.43);
-        ctx.quadraticCurveTo(Math.sin(a) * r * 0.2, -r * 0.75, Math.sin(a) * r * 0.42, -r * 0.9 + wag * r);
-        ctx.stroke();
+        ctx.arc(bx, by, br, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.75)";
+        ctx.beginPath();
+        ctx.arc(bx - br * 0.35, by - br * 0.35, br * 0.32, 0, Math.PI * 2);
+        ctx.fill();
       }
+      // 委屈表情：两个黑点眼睛 + 微张小嘴
+      ctx.fillStyle = "#2b2b2b";
+      ctx.beginPath();
+      ctx.arc(-r * 0.22, -r * 0.04, r * 0.065, 0, Math.PI * 2);
+      ctx.arc(r * 0.22, -r * 0.04, r * 0.065, 0, Math.PI * 2);
+      ctx.fill();
+      // 眼睛高光
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(-r * 0.24, -r * 0.06, r * 0.022, 0, Math.PI * 2);
+      ctx.arc(r * 0.2, -r * 0.06, r * 0.022, 0, Math.PI * 2);
+      ctx.fill();
+      // 微张的小嘴（委屈下弯）
+      ctx.strokeStyle = "#2b2b2b";
+      ctx.lineWidth = Math.max(1, r * 0.05);
+      ctx.beginPath();
+      ctx.arc(0, r * 0.2, r * 0.11, Math.PI * 0.25, Math.PI * 0.75);
+      ctx.stroke();
     }
 
     // 呼吸光圈提示（藤壶用警示橙，食物用白色）

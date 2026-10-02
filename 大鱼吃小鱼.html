@@ -411,22 +411,40 @@
   const dist2 = (x1, y1, x2, y2) => { const dx = x1 - x2, dy = y1 - y2; return dx * dx + dy * dy; };
 
   // ---------- 玩家图片（自定义形象）----------
+  // 把原图（角色朝左）水平镜像成朝右，随 angle 朝向运动方向
+  function flippedCanvas(img) {
+    const c = document.createElement("canvas");
+    c.width = img.width; c.height = img.height;
+    const g = c.getContext("2d");
+    g.translate(c.width, 0); g.scale(-1, 1);         // 水平镜像
+    g.drawImage(img, 0, 0);
+    return c;
+  }
+
   let playerImg = new Image();
   let playerImgReady = false;
-  let playerImgFlipped = null; // 水平翻转后的离屏画布（图片朝左 → 转成朝右，随 angle 朝运动方向）
+  let playerImgFlipped = null; // 正常形象（翻转后）
   playerImg.onload = () => {
     try {
-      const c = document.createElement("canvas");
-      c.width = playerImg.width; c.height = playerImg.height;
-      const g = c.getContext("2d");
-      g.translate(c.width, 0); g.scale(-1, 1);       // 水平镜像
-      g.drawImage(playerImg, 0, 0);
-      playerImgFlipped = c;
+      playerImgFlipped = flippedCanvas(playerImg);
       playerImgReady = true;
     } catch (e) { playerImgReady = false; }
   };
   playerImg.onerror = () => { playerImgReady = false; };
   playerImg.src = "图片/player.png";
+
+  // 寄生形象（碰到藤壶减速时切换成这张，减速结束后恢复原图）
+  let parasiteImg = new Image();
+  let parasiteImgReady = false;
+  let parasiteImgFlipped = null; // 寄生形象（翻转后）
+  parasiteImg.onload = () => {
+    try {
+      parasiteImgFlipped = flippedCanvas(parasiteImg);
+      parasiteImgReady = true;
+    } catch (e) { parasiteImgReady = false; }
+  };
+  parasiteImg.onerror = () => { parasiteImgReady = false; };
+  parasiteImg.src = "图片/寄生状态.png";
 
   // ---------- 游戏状态 ----------
   let player, fishes, bubbles, plants, particles, items;
@@ -1009,8 +1027,11 @@
       ctx.translate(x, y);
       ctx.rotate(angle);
       const size = r * 2.2;                      // 与玩家体型匹配的显示尺寸
-      ctx.drawImage(playerImgFlipped, -size / 2, -size / 2, size, size);
-      // 藤壶减速：围绕玩家的淡蓝光环 + 尾巴粘藤壶 + 头部惊恐表情
+      // 藤壶减速期间：切换成「被寄生」形象；减速结束后恢复原图
+      const isParasite = slowTimer > 0 && parasiteImgReady && parasiteImgFlipped;
+      ctx.drawImage(isParasite ? parasiteImgFlipped : playerImgFlipped,
+                    -size / 2, -size / 2, size, size);
+      // 藤壶减速：围绕玩家的淡蓝光环提示（寄生形象本身已含藤壶与惊恐表情）
       if (slowTimer > 0) {
         const pulse = size * 0.6 + Math.sin(performance.now() / 120) * 3;
         ctx.strokeStyle = "rgba(120,190,255," + (0.4 + 0.25 * Math.sin(performance.now() / 150)) + ")";
@@ -1022,16 +1043,6 @@
         ctx.beginPath();
         ctx.arc(0, 0, pulse, 0, Math.PI * 2);
         ctx.fill();
-        // 藤壶粘在尾巴上（图片朝右，尾巴在 -x 方向）
-        ctx.save();
-        ctx.translate(-size * 0.42, -size * 0.02);
-        drawBarnacleShape(clamp(r * 0.5, 12, 40), 0);
-        ctx.restore();
-        // 玩家惊恐表情（头部，+x 方向）
-        ctx.save();
-        ctx.translate(size * 0.26, -size * 0.03);
-        drawPanicFace(clamp(r * 0.6, 13, 60));
-        ctx.restore();
       }
       ctx.restore();
       return;

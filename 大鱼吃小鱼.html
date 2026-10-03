@@ -444,14 +444,14 @@
     } catch (e) { parasiteImgReady = false; }
   };
   parasiteImg.onerror = () => { parasiteImgReady = false; };
-  parasiteImg.src = "图片/寄生状态.png";
+  parasiteImg.src = "图片/parasite.png";
 
   // 藤壶道具展示图（去底透明 PNG，掉落道具用）
   let barnacleImg = new Image();
   let barnacleImgReady = false;
   barnacleImg.onload = () => { barnacleImgReady = true; };
   barnacleImg.onerror = () => { barnacleImgReady = false; };
-  barnacleImg.src = "图片/藤壶道具.png";
+  barnacleImg.src = "图片/barnacle.png";
 
   // ---------- 游戏状态 ----------
   let player, fishes, bubbles, plants, particles, items;

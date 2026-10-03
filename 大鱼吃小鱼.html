@@ -446,6 +446,13 @@
   parasiteImg.onerror = () => { parasiteImgReady = false; };
   parasiteImg.src = "图片/寄生状态.png";
 
+  // 藤壶道具展示图（去底透明 PNG，掉落道具用）
+  let barnacleImg = new Image();
+  let barnacleImgReady = false;
+  barnacleImg.onload = () => { barnacleImgReady = true; };
+  barnacleImg.onerror = () => { barnacleImgReady = false; };
+  barnacleImg.src = "图片/藤壶道具.png";
+
   // ---------- 游戏状态 ----------
   let player, fishes, bubbles, plants, particles, items;
   let score = 0, combo = 0, comboTimer = 0, status = "idle"; // idle | playing | over | paused
@@ -825,54 +832,117 @@
     ctx.fill();
   }
 
-  // 藤壶形状绘制（壳+开口+水泡+委屈惊恐脸），可复用：道具掉落 & 粘在玩家尾巴上
+  // 藤壶壳绘制（参考立体藤壶：米白火山锥壳 + 深蓝近黑开口 + 白色壳片与灰褐小点 + 蓝色反光 + 底部挂水珠）
   function drawBarnacleShape(r, sway) {
-    const ph = performance.now() / 350;
-    // 外壳主体（宽底窄口的小火山/圆台形，灰白乳白，岩石质感）
-    ctx.fillStyle = "#e8e4d8";
+    const ph = performance.now() / 380;
+
+    // 外壳主体：上窄下宽的火山锥，米白冷灰渐变（中部受光、两侧冷灰阴影）
+    const shell = ctx.createLinearGradient(-r * 0.8, 0, r * 0.8, 0);
+    shell.addColorStop(0, "#d8d5cc");
+    shell.addColorStop(0.45, "#f6f3ea");
+    shell.addColorStop(1, "#c4c1b8");
+    ctx.fillStyle = shell;
     ctx.beginPath();
-    ctx.moveTo(-r * 0.78, r * 0.6);
-    ctx.quadraticCurveTo(-r * 0.58, -r * 0.12, -r * 0.34, -r * 0.72);
-    ctx.lineTo(r * 0.34, -r * 0.72);
-    ctx.quadraticCurveTo(r * 0.58, -r * 0.12, r * 0.78, r * 0.6);
+    ctx.moveTo(-r * 0.82, r * 0.6);
+    ctx.quadraticCurveTo(-r * 0.6, -r * 0.08, -r * 0.38, -r * 0.78);
+    ctx.lineTo(r * 0.38, -r * 0.78);
+    ctx.quadraticCurveTo(r * 0.6, -r * 0.08, r * 0.82, r * 0.6);
+    ctx.quadraticCurveTo(0, r * 0.78, -r * 0.82, r * 0.6);
     ctx.closePath();
     ctx.fill();
-    // 外壳横向生长纹（环状突起，浅灰分界线）
-    ctx.strokeStyle = "#c0beb4";
-    ctx.lineWidth = 1.5;
-    for (let i = 0; i < 4; i++) {
-      const yy = -r * 0.42 + i * r * 0.26;
-      const w = r * (0.5 + i * 0.075);
+
+    // 壳身横向生长环（灰褐细线，随锥体向下逐渐加宽）
+    ctx.strokeStyle = "rgba(148,140,124,0.55)";
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < 3; i++) {
+      const t = 0.2 + i * 0.26;
+      const yy = -r * 0.74 + t * r * 1.4;
+      const w = r * (0.36 + t * 0.46);
       ctx.beginPath();
       ctx.moveTo(-w, yy);
-      ctx.quadraticCurveTo(0, yy + r * 0.07, w, yy);
+      ctx.quadraticCurveTo(0, yy + r * 0.08, w, yy);
       ctx.stroke();
     }
-    // 顶部深蓝紫开口（中心近黑）
-    ctx.fillStyle = "#1d2b53";
-    ctx.beginPath();
-    ctx.ellipse(0, -r * 0.72, r * 0.34, r * 0.12, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#141c33";
-    ctx.beginPath();
-    ctx.ellipse(0, -r * 0.72, r * 0.22, r * 0.075, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // 冒出的淡蓝半透明水泡（摆动上飘，带高光）
-    for (let i = 0; i < 4; i++) {
-      const bx = Math.sin(sway + i * 1.9 + ph) * r * 0.22;
-      const by = -r * 0.84 - i * r * 0.16;
-      const br = r * (0.16 - i * 0.026);
-      ctx.fillStyle = "rgba(120,200,255,0.55)";
+
+    // 壳身纵向棱纹（火山锥质感）
+    ctx.strokeStyle = "rgba(178,172,156,0.5)";
+    ctx.lineWidth = 1;
+    for (let i = -2; i <= 2; i++) {
       ctx.beginPath();
-      ctx.arc(bx, by, br, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      ctx.moveTo(i * r * 0.1, -r * 0.52);
+      ctx.quadraticCurveTo(i * r * 0.14, r * 0.05, i * r * 0.16, r * 0.62);
+      ctx.stroke();
+    }
+
+    // 顶部深蓝近黑开口（吸附器官内部）
+    ctx.fillStyle = "#1a2650";
+    ctx.beginPath();
+    ctx.ellipse(0, -r * 0.78, r * 0.38, r * 0.13, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#0a0f24";
+    ctx.beginPath();
+    ctx.ellipse(0, -r * 0.78, r * 0.23, r * 0.08, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 开口外缘一圈白色小壳片（沿顶部弧线向外张开）
+    ctx.fillStyle = "#faf8f1";
+    for (let i = 0; i < 9; i++) {
+      const a = Math.PI * (0.04 + i / 8 * 0.92); // 顶部 0.04π~0.96π
+      const nx = Math.cos(a), ny = Math.sin(a);
+      const px = nx * r * 0.34;
+      const py = -r * 0.78 + ny * r * 0.11;
+      const tipX = px + nx * r * 0.13;
+      const tipY = py + ny * r * 0.11;
+      const tx = -ny, ty = nx;
       ctx.beginPath();
-      ctx.arc(bx - br * 0.35, by - br * 0.35, br * 0.34, 0, Math.PI * 2);
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(px + tx * r * 0.05, py + ty * r * 0.05);
+      ctx.lineTo(px - tx * r * 0.05, py - ty * r * 0.05);
+      ctx.closePath();
       ctx.fill();
     }
-    // 委屈惊恐表情
-    drawPanicFace(r);
+
+    // 开口下方一圈灰褐色小点（生长环纹理）
+    ctx.fillStyle = "rgba(122,112,90,0.6)";
+    for (let i = 0; i < 7; i++) {
+      const a = Math.PI * (0.1 + i / 6 * 0.8);
+      const px = Math.cos(a) * r * 0.33;
+      const py = -r * 0.78 + Math.sin(a) * r * 0.17 + r * 0.08;
+      ctx.beginPath();
+      ctx.arc(px, py, r * 0.03, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 左侧蓝色湿润反光（两道弧形高光）
+    ctx.strokeStyle = "rgba(150,210,255,0.55)";
+    ctx.lineWidth = r * 0.09;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(-r * 0.1, r * 0.02, r * 0.56, Math.PI * 1.02, Math.PI * 1.42);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,0.75)";
+    ctx.lineWidth = r * 0.04;
+    ctx.beginPath();
+    ctx.arc(-r * 0.12, r * 0.0, r * 0.5, Math.PI * 1.08, Math.PI * 1.36);
+    ctx.stroke();
+
+    // 底部悬挂的蓝白透明水珠（微微摆动，带高光）
+    for (let i = 0; i < 2; i++) {
+      const bx = (i - 0.5) * r * 0.52 + Math.sin(sway + i * 0.9 + ph) * r * 0.08;
+      const by = r * (0.72 + i * 0.16) + Math.sin(sway + ph + i * 2.1) * r * 0.05;
+      const br = r * (0.15 - i * 0.045);
+      ctx.fillStyle = "rgba(130,205,255,0.6)";
+      ctx.beginPath();
+      ctx.moveTo(bx, by - br);
+      ctx.quadraticCurveTo(bx + br, by + br * 0.25, bx, by + br);
+      ctx.quadraticCurveTo(bx - br, by + br * 0.25, bx, by - br);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.beginPath();
+      ctx.arc(bx - br * 0.3, by - br * 0.35, br * 0.32, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   function drawItem(it) {
@@ -923,13 +993,21 @@
         ctx.fill();
       }
     } else if (type.type === "barnacle") {
-      drawBarnacleShape(r, it.sway);
+      // 藤壶道具：使用去底透明展示图；未就绪时回退为程序绘制
+      if (barnacleImgReady && barnacleImg) {
+        const s = r * 2.6;
+        const bob = Math.sin(it.sway) * r * 0.14;
+        ctx.drawImage(barnacleImg, -s / 2, -s / 2 + bob, s, s);
+      } else {
+        drawBarnacleShape(r, it.sway);
+      }
     }
 
     // 呼吸光圈提示（藤壶用警示橙，食物用白色）
     ctx.strokeStyle = type.type === "barnacle" ? "rgba(255,150,80,0.7)" : "rgba(255,255,255,0.4)";
     ctx.lineWidth = type.type === "barnacle" ? 2.2 : 1.5;
-    const pulse = r + 5 + Math.sin(performance.now() / 250) * 1.6;
+    const visualR = type.type === "barnacle" ? r * 1.4 : r;
+    const pulse = visualR + 5 + Math.sin(performance.now() / 250) * 1.6;
     ctx.beginPath(); ctx.arc(0, 0, pulse, 0, Math.PI * 2); ctx.stroke();
 
     ctx.restore();
